@@ -19,7 +19,8 @@ HEADERS = {
 }
 
 st.set_page_config(page_title="ScanCode Toolkit Runner", layout="wide")
-st.title("🧩 ScanCode Toolkit ")
+st.title("ScanCode Toolkit Scanner")
+st.caption("© EY Internal Use Only")
 
 if not TOKEN:
     st.warning("No GitHub token found. Add `GITHUB_TOKEN` to Streamlit secrets for private repos and higher rate limits.")
