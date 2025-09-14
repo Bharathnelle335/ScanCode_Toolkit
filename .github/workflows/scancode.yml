@@ -1,6 +1,5 @@
 name: "ScanCode Toolkit Scan (downloadable in ui)"
 
-# Helpful run title in Actions UI (includes your client tag if provided)
 run-name: >-
   ScanCode ${{ github.event.inputs.scan_mode }} •
   ${{ github.event.inputs.source }} •
@@ -33,7 +32,6 @@ on:
         required: false
         default: ""
 
-      # Opaque tag from the UI so you can find this run/artifact later
       client_run_id:
         description: "Opaque run tag from the UI (for status + artifact lookup)"
         required: false
@@ -242,7 +240,7 @@ jobs:
                 INPUT_PATH="input_zip"
                 base="$(basename "$SOURCE_RAW")"; LABEL="${base%.*}"
               fi
-              ;;
+              ;*
 
             tar)
               if is_url "$SOURCE_RAW"; then
@@ -285,10 +283,12 @@ jobs:
                 echo "❌ source (docker image) is required for scan_mode=docker" >&2
                 exit 1
               fi
+              echo "📥 Pulling Docker image: $DOCKER_IMAGE"
               docker pull "$DOCKER_IMAGE"
-              docker save "$DOCKER_IMAGE" -o "docker-image.tar"
-              INPUT_PATH="docker-image.tar"
-              LABEL="$(echo "$DOCKER_IMAGE" | tr '/:' '__')"
+              echo "DOCKER_IMAGE_REF=$DOCKER_IMAGE" >> "$GITHUB_ENV"
+              # LABEL from image ref
+              LABEL="$(echo "$DOCKER_IMAGE" | tr '/:@' '__')"
+              # INPUT_PATH will be set by the Docker rootfs export step
               ;;
 
             *)
@@ -303,9 +303,27 @@ jobs:
           if [[ -z "$SAN_LABEL" ]]; then SAN_LABEL="scan"; fi
           SAN_LABEL="${SAN_LABEL:0:80}"
 
-          echo "INPUT_PATH=$INPUT_PATH" >> "$GITHUB_ENV"
+          # Persist
+          if [[ -n "${INPUT_PATH:-}" ]]; then
+            echo "INPUT_PATH=$INPUT_PATH" >> "$GITHUB_ENV"
+          fi
           echo "SCAN_LABEL=$SAN_LABEL" >> "$GITHUB_ENV"
           echo "RUN_TAG=$RUN_TAG_IN"   >> "$GITHUB_ENV"
+
+      - name: Prepare Docker rootfs for ScanCode (docker mode)
+        if: ${{ github.event.inputs.scan_mode == 'docker' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMG="${{ github.event.inputs.source }}"
+          CID="$(docker create "$IMG" /bin/true)"
+          mkdir -p docker-rootfs
+          # export the container filesystem and unpack to directory
+          docker export "$CID" | tar -C docker-rootfs -xf -
+          docker rm "$CID" >/dev/null
+          # ensure world-readable to avoid permission issues
+          chmod -R a+rX docker-rootfs || true
+          echo "INPUT_PATH=docker-rootfs" >> "$GITHUB_ENV"
 
       - name: Download ScanCode Toolkit
         shell: bash
@@ -326,15 +344,15 @@ jobs:
             SCANCODE_OPTS="$SCANCODE_OPTS --license --license-text"
           fi
           if [ "${{ github.event.inputs.enable_package }}" = "true" ]; then
-          SCANCODE_OPTS="$SCANCODE_OPTS --package"
+            SCANCODE_OPTS="$SCANCODE_OPTS --package"
           fi
 
           OUT_PREFIX="$GITHUB_WORKSPACE/scancode_${SCAN_LABEL}"
-          IN_PATH="$GITHUB_WORKSPACE/$INPUT_PATH"
+          IN_PATH="$GITHUB_WORKSPACE/${INPUT_PATH}"
 
           MAIN_JSON_OPTS="$SCANCODE_OPTS"
           if [ "${{ github.event.inputs.enable_copyright_scan }}" = "true" ]; then
-            MAIN_JSON_OPTS="$MAIN_JSON_OPTS --copyright --email"
+            MAIN_JSON_OPTS="$MAIN_JSON_OPTS --copyright --email --info"
           fi
 
           # Main JSON
@@ -349,8 +367,8 @@ jobs:
           fi
 
           # Copyrights CSV
-          if [ "${{ github.event.inputs.enable_copyright_scan }}" = "true" ]; then
-            ./scancode -c --csv "${OUT_PREFIX}_copyrights.csv" "$IN_PATH"
+          if [ "${{ github.event.inputs.enable_sbom_export }}" = "true" ] || [ "${{ github.event.inputs.enable_license_scan }}" = "true" ]; then
+            ./scancode -c --csv "${OUT_PREFIX}_copyrights.csv" "$IN_PATH" || true
           fi
 
           echo "OUT_PREFIX=$OUT_PREFIX" >> "$GITHUB_ENV"
@@ -450,7 +468,6 @@ jobs:
       - name: Upload ScanCode reports
         uses: actions/upload-artifact@v4
         with:
-          # include RUN_TAG to make UI lookup trivial
           name: scancode-reports-${{ env.SCAN_LABEL }}-${{ env.RUN_TAG }}
           path: |
             scancode_${{ env.SCAN_LABEL }}.json
