@@ -1,4 +1,4 @@
-name: "ScanCode Toolkit Scan (downloadable in ui_added docker file level scanning)"
+name: "ScanCode Toolkit Scan (downloadable in ui)"
 
 run-name: >-
   ScanCode ${{ github.event.inputs.scan_mode }} •
@@ -240,7 +240,7 @@ jobs:
                 INPUT_PATH="input_zip"
                 base="$(basename "$SOURCE_RAW")"; LABEL="${base%.*}"
               fi
-              ;*
+              ;;
 
             tar)
               if is_url "$SOURCE_RAW"; then
@@ -366,7 +366,7 @@ jobs:
             ./scancode --spdx-rdf      "${OUT_PREFIX}.spdx.rdf" "$IN_PATH"
           fi
 
-          # Copyrights CSV
+          # Copyrights CSV (produce when SBOM export or license scan is on)
           if [ "${{ github.event.inputs.enable_sbom_export }}" = "true" ] || [ "${{ github.event.inputs.enable_license_scan }}" = "true" ]; then
             ./scancode -c --csv "${OUT_PREFIX}_copyrights.csv" "$IN_PATH" || true
           fi
