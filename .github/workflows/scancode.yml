@@ -1,4 +1,4 @@
-name: "ScanCode Toolkit Scan (downloadable in ui)"
+name: "ScanCode Toolkit Scan (downloadable in ui_added docker file level scanning)"
 
 run-name: >-
   ScanCode ${{ github.event.inputs.scan_mode }} •
